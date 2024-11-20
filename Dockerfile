@@ -8,6 +8,9 @@ ARG TARGETVARIANT
 
 # See .dockerignore for the list of files being copied.
 WORKDIR "/src/"
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY [".", "/src/"]
 
 # Compile the code.

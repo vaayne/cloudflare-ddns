@@ -62,6 +62,13 @@ func stopUpdating(ctx context.Context, ppfmt pp.PP, c *config.Config, s setter.S
 	}
 }
 
+func exitWhenConfigFailed(ctx context.Context, ppfmt pp.PP, c *config.Config) {
+	c.Monitor.Ping(ctx, ppfmt, monitor.NewMessagef(false, "Configuration errors"))
+	c.Notifier.Send(ctx, ppfmt, notifier.NewMessagef(
+		"Cloudflare DDNS was misconfigured and could not start. Please check the logging for details."))
+	ppfmt.Infof(pp.EmojiBye, "Bye!")
+}
+
 func main() {
 	// This is to make os.Exit work with defer
 	os.Exit(realMain())
@@ -92,10 +99,7 @@ func realMain() int {
 	c.Monitor.Start(ctx, ppfmt, formatName())
 	// Bail out now if initConfig failed
 	if !configOK {
-		c.Monitor.Ping(ctx, ppfmt, monitor.NewMessagef(false, "Configuration errors"))
-		c.Notifier.Send(ctx, ppfmt, notifier.NewMessagef(
-			"Cloudflare DDNS was misconfigured and could not start. Please check the logging for details."))
-		ppfmt.Infof(pp.EmojiBye, "Bye!")
+		exitWhenConfigFailed(ctx, ppfmt, c)
 		return 1
 	}
 	// If UPDATE_CRON is not `@once` (not single-run mode), then send a notification to signal the start.
@@ -119,6 +123,12 @@ func realMain() int {
 		// The next time to run the updater.
 		// This is called before running the updater so that the timer would not be delayed by the updating.
 		next := cron.Next(c.UpdateCron)
+
+		// Check if the config was changed
+		if !c.ReadEnv(ppfmt) || !c.Normalize(ppfmt) {
+			exitWhenConfigFailed(ctx, ppfmt, c)
+			return 1
+		}
 
 		// Update the IP addresses
 		if first && !c.UpdateOnStart {
